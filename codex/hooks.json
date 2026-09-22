@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.agent-incognito/bin/incognito.sh guard --format=codex", "timeout": 10, "statusMessage": "incognito guard" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "bash $HOME/.agent-incognito/bin/incognito.sh cleanup --format=codex", "timeout": 5 } ] }
+    ]
+  }
+}

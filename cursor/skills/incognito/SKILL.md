@@ -1,12 +1,19 @@
 ---
-description: Work from a fresh state — ignore all stored memory, and save nothing unless explicitly told to
-argument-hint: "[on | off | save | status]"
-allowed-tools: Bash(sh:*)
+name: incognito
+description: Work from a fresh state — ignore all stored memory, and save nothing unless explicitly told to. Use when the user says incognito, fresh state, ignore memory, or don't remember this.
+disable-model-invocation: true
 ---
 
-!`sh -c 'for p in "${CLAUDE_PLUGIN_ROOT:-}/core/incognito.sh" "$HOME/.agent-incognito/bin/incognito.sh"; do [ -f "$p" ] && exec bash "$p" "$@"; done; echo "agent-incognito: control script not found"' -- $ARGUMENTS`
+# Incognito
 
-The line above is the authoritative state change. Act on whichever state it reports.
+**First, run this in the terminal** and report what it prints:
+
+```bash
+bash "$HOME/.agent-incognito/bin/incognito.sh" ${ARGUMENTS:-on}
+```
+
+Pass `on` (default), `off`, `save`, or `status` depending on what the user asked for.
+Its output is the authoritative state change — act on whichever state it reports.
 
 ## When it reports INCOGNITO: ON
 

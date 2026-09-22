@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "command": "bash $HOME/.agent-incognito/bin/incognito.sh guard --format=cursor", "type": "command", "timeout": 10, "failClosed": false, "description": "agent-incognito memory guard" }
+    ],
+    "beforeShellExecution": [
+      { "command": "bash $HOME/.agent-incognito/bin/incognito.sh guard --format=cursor", "type": "command", "timeout": 10, "failClosed": false, "description": "agent-incognito memory guard" }
+    ],
+    "beforeReadFile": [
+      { "command": "bash $HOME/.agent-incognito/bin/incognito.sh guard --format=cursor", "type": "command", "timeout": 10, "failClosed": false, "description": "agent-incognito memory guard" }
+    ],
+    "sessionEnd": [
+      { "command": "bash $HOME/.agent-incognito/bin/incognito.sh cleanup --format=cursor", "type": "command", "timeout": 5, "failClosed": false, "description": "agent-incognito cleanup" }
+    ]
+  }
+}

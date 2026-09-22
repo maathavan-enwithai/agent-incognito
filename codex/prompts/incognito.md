@@ -1,12 +1,16 @@
 ---
 description: Work from a fresh state — ignore all stored memory, and save nothing unless explicitly told to
 argument-hint: "[on | off | save | status]"
-allowed-tools: Bash(sh:*)
 ---
 
-!`sh -c 'for p in "${CLAUDE_PLUGIN_ROOT:-}/core/incognito.sh" "$HOME/.agent-incognito/bin/incognito.sh"; do [ -f "$p" ] && exec bash "$p" "$@"; done; echo "agent-incognito: control script not found"' -- $ARGUMENTS`
+**First, run this in the shell** and report what it prints:
 
-The line above is the authoritative state change. Act on whichever state it reports.
+```bash
+bash "$HOME/.agent-incognito/bin/incognito.sh" $ARGUMENTS
+```
+
+(With no argument it turns incognito on.) Its output is the authoritative state change —
+act on whichever state it reports.
 
 ## When it reports INCOGNITO: ON
 
