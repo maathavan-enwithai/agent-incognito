@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-incognito",
+  "description": "Single-plugin marketplace for agent-incognito",
+  "owner": {
+    "name": "EnWithAI",
+    "email": "ai-tools@enwithai.com"
+  },
+  "plugins": [
+    {
+      "name": "agent-incognito",
+      "description": "Per-session memory isolation for Claude Code: /incognito makes Claude ignore stored memory and save nothing unless explicitly told to.",
+      "category": "productivity",
+      "source": "./"
+    }
+  ]
+}

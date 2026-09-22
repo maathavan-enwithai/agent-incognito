@@ -1,0 +1,10 @@
+{
+  "name": "agent-incognito",
+  "description": "Adds /incognito — a per-session mode where Claude ignores all stored memory and writes nothing back unless you explicitly ask it to. Enforced by a PreToolUse hook, not just instructions.",
+  "version": "1.0.0",
+  "author": {
+    "name": "EnWithAI",
+    "email": "ai-tools@enwithai.com"
+  },
+  "keywords": ["memory", "privacy", "session", "hooks"]
+}
