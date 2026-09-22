@@ -1,29 +1,16 @@
 {
-  "description": "Blocks reads and writes to Claude Code's stored memory while a session is in incognito mode",
+  "description": "Blocks reads and writes to stored memory while a session is in incognito mode",
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash|Read|Edit|Write|Grep|Glob|NotebookEdit",
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/incognito.sh guard",
-            "timeout": 5,
-            "statusMessage": "incognito guard"
-          }
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/core/incognito.sh guard --format=claude", "timeout": 5, "statusMessage": "incognito guard" }
         ]
       }
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/incognito.sh cleanup",
-            "timeout": 5
-          }
-        ]
-      }
+      { "hooks": [ { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/core/incognito.sh cleanup --format=claude", "timeout": 5 } ] }
     ]
   }
 }

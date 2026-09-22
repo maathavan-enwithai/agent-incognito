@@ -1,16 +1,17 @@
 # agent-incognito
 
-A `/incognito` mode for Claude Code: a per-session state where Claude **ignores everything
-in stored memory** and **writes nothing back** unless you explicitly ask it to.
+An `/incognito` mode for coding agents: a state where the agent **ignores everything in
+stored memory** and **writes nothing back** unless you explicitly ask it to.
 
-Unlike a prompt that asks Claude to "please ignore your memory", this is enforced by a
-`PreToolUse` hook. When incognito is on, any tool call that reaches the memory store is
-denied by the harness before it runs.
+Works with **Claude Code**, **Cursor**, **Codex CLI** and **GitHub Copilot CLI** — all four
+expose a pre-tool hook that can deny a call, so this is enforced by the host rather than
+merely requested in a prompt. When incognito is on, any tool call that reaches the memory
+store is denied before it runs.
 
 ```
 /incognito          # fresh state: memory is ignored, and read-only
 /incognito status   # what state am I in?
-/incognito save     # one-off write window — only after you asked Claude to remember something
+/incognito save     # one-off write window — only after you asked the agent to remember something
 /incognito off      # back to normal
 ```
 
@@ -23,141 +24,144 @@ written as confident memories — and bad memories degrade every later answer *s
 don't see the pollution; you just get worse output. A mode where writes are off by default
 fixes a failure you otherwise can't detect.
 
-Also useful for:
+Also useful for **clean-room debugging** (force the agent to reason from the code in front of
+it, not a fact that went stale three migrations ago) and **borrowed context** (another
+client's repo, a screen-share, a demo machine).
 
-- **Clean-room debugging** — force Claude to reason from the code in front of it, instead of
-  a remembered fact that went stale three migrations ago.
-- **Borrowed context** — another client's repo, a screen-share, a demo machine.
+## What it treats as memory
 
-## Honest limits — please read before you rely on it
+Learned, recalled state — blocked while incognito:
 
-- **This is memory isolation, not privacy.** The conversation is still written to the session
-  transcript and `history.jsonl` as usual. If privacy is what you want, the levers are
-  `--no-session-persistence` and `cleanupPeriodDays`, not this.
-- **Mid-session it's "disregard", not "unload".** `MEMORY.md` is loaded into context at session
-  start; no command can pull it back out. For a genuinely clean context, go incognito at the
-  start of a session or right after `/clear`.
+| Host | Blocked |
+|---|---|
+| Claude Code | `~/.claude/projects/**/memory/`, `MEMORY.md`, all of `~/.claude/projects`, `history.jsonl` |
+| Codex CLI | `~/.codex/memories_*.sqlite`, `~/.codex/sessions/`, `~/.codex/history.jsonl` |
+| Cursor | `~/.cursor/projects/`, anything named `memories` |
+| Copilot CLI | `~/.copilot/session-store*`, `session-state`, `sidebar-sessions-state`, `command-history-state` |
+
+Instruction files are **not** memory and stay readable: `CLAUDE.md`, `AGENTS.md`,
+`.cursor/rules`, `copilot-instructions.md`, and your repo's own files — including a
+`MEMORY.md` that belongs to your project. All four hosts' stores are blocked in every host,
+so a Cursor session can't read Claude Code's memory either.
+
+The guard also blocks the sideways route: a broad `grep` over `~/.claude/projects` reaches
+memory without ever naming it, so that is denied too.
+
+---
+
+## Host support — read this before relying on it
+
+| | Claude Code | Codex CLI | Cursor | Copilot CLI |
+|---|---|---|---|---|
+| Hook denies memory access | yes | yes | yes | yes |
+| Invoked by | `/incognito` | `/incognito` prompt | `/incognito` skill | ask it in words |
+| Scope | one session | one session | workspace | workspace |
+| Extra setup | none | `/hooks` to trust | none | none |
+| Memory it *cannot* reach | — | — | server-side Memories | server-side repo memory |
+
+Two things worth understanding:
+
+**Scope.** Claude Code and Codex pass a session id to the hook *and* expose one to the
+shell, so incognito there is scoped to exactly one session. Cursor and Copilot don't expose
+a session id to the shell, so the control script falls back to keying on the **workspace** —
+two Cursor windows open on the same project share one incognito state. That is a real
+difference, not a rounding error.
+
+**Server-side memory.** Cursor's Memories and Copilot's repository memory are stored on
+their servers, not on your disk. A local hook cannot block what never touches the
+filesystem. The behavioural half of incognito (the agent is instructed to disregard it)
+still applies; the hard block does not. On Claude Code and Codex, where memory is local
+files, the block is complete.
+
+## Honest limits — all hosts
+
+- **This is memory isolation, not privacy.** The conversation is still written to the host's
+  transcript and history as usual.
+- **Mid-session it's "disregard", not "unload".** Memory loaded into context at session start
+  can't be pulled back out. For a genuinely clean context, go incognito at the start.
 - **It guards against accidents, not against the model.** The hook cannot tell whether *you*
-  asked for a save or Claude decided on its own — Claude can call `save` itself. It makes the
-  safe path the default; it is not a sandbox.
-- **If you want memory off permanently**, you don't need this at all. Claude Code ships
-  `"autoMemoryEnabled": false`, which disables memory for a project outright. agent-incognito
-  exists for the *per-session, reversible, with an escape hatch* case.
+  asked for a save or the agent decided on its own — the agent can call `save` itself. It
+  makes the safe path the default; it is not a sandbox.
+- **Empty hook output is treated as "no opinion" (allow).** Verified on Claude Code by
+  running it. On Cursor and Copilot this follows their documented exit-code behaviour but
+  has not been confirmed against a live session — deliberately, the hooks are registered
+  `failClosed: false`, so a hook problem fails open rather than blocking your work.
+- **If you want memory off permanently**, you don't need this. Claude Code ships
+  `"autoMemoryEnabled": false`. agent-incognito exists for the *per-session, reversible,
+  with an escape hatch* case.
 
 ---
 
 ## How it works
 
-Three moving parts:
+One shared guard, four thin adapters. `core/incognito.sh` holds all the logic — state,
+path matching, the allow/deny decision — and `--format=<host>` selects the response shape
+that host expects (`hookSpecificOutput.permissionDecision` for Claude Code and Codex,
+`permissionDecision` for Copilot, `permission` for Cursor). Session id is read from
+whichever of `session_id` / `sessionId` / `conversation_id` the host sends.
 
-| Part | Does what |
-|---|---|
-| `commands/incognito.md` | The `/incognito` slash command. Flips state, and instructs Claude how to behave in a fresh state. |
-| `hooks/incognito.sh` | Control script **and** the `PreToolUse` guard. One file, two modes. |
-| `hooks/hooks.json` | Registers the guard on `Bash\|Read\|Edit\|Write\|Grep\|Glob\|NotebookEdit`, plus a `SessionEnd` cleanup. |
-
-State is a flag file at `~/.claude/incognito/<session-id>.on`, so **scope is one session**.
-Other sessions you have open are unaffected, and a `SessionEnd` hook clears the flag when the
-session ends.
-
-What the guard blocks while incognito is on, whether it arrives via `Read`, `Grep`, `Glob`, or a
-`Bash` command:
-
-- the auto-memory directory and `MEMORY.md`
-- `~/.claude/projects/**` — because a broad grep there reaches memory without ever naming it
-- `~/.claude/history.jsonl` — cross-session prompt history
-- a custom `autoMemoryDirectory`, if you have one configured
-
-It does **not** touch your repo's own files, including a `MEMORY.md` that belongs to your project.
-When nothing is incognito, the guard exits before it even parses its input.
-
-`/incognito save` writes a 15-minute unlock token. The guard honours it, then it expires on its
-own — so a single "remember this" never quietly becomes a session-long licence to write.
+State is a flag file under `~/.agent-incognito/state/`. `save` writes a 15-minute unlock
+token that expires on its own, so a single "remember this" never quietly becomes a
+session-long licence to write. When nothing is incognito, the guard exits before it even
+parses its input.
 
 ---
 
 ## Install
 
-Requires **bash** and **jq**. macOS and Linux. (Windows: WSL or Git Bash.)
+Requires **bash** and **jq**. macOS and Linux (Windows: WSL or Git Bash).
 
-### Option 1 — as a plugin (recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/maathavan-enwithai/agent-incognito/main/install.sh | bash
+```
 
-The folder is both a plugin *and* a single-plugin marketplace, so a Git host is all you need.
-**The user never clones anything** — Claude Code fetches it:
+That installs for **every agent it finds** on the machine. To choose:
+
+```bash
+./install.sh cursor codex     # just these
+./install.sh all              # all four regardless of what's detected
+```
+
+It writes one shared script to `~/.agent-incognito/bin/`, then per host: merges hook entries
+into the host's config (keeping a timestamped backup and never touching your other hooks),
+and drops in the command/skill/prompt/instruction file. Re-running upgrades in place and
+never duplicates entries. It finishes by self-testing that the guard actually denies.
+
+**Codex needs one extra step:** run `/hooks` in Codex once to review and trust the new hook.
+Codex records trust against the hook's hash and skips untrusted hooks.
+
+### Claude Code as a plugin (alternative)
+
+The repo is also a Claude Code plugin *and* its own marketplace, so nothing is written to
+your `settings.json` and updates come through `/plugin`:
 
 ```
 /plugin marketplace add maathavan-enwithai/agent-incognito
 /plugin install agent-incognito@agent-incognito
 ```
 
-Updates come through `/plugin`, and uninstalling is `/plugin uninstall`. Nothing is written to
-your `settings.json`.
-
-### Option 2 — one-line installer, no git at all
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/maathavan-enwithai/agent-incognito/main/install.sh | bash
-```
-
-Installing from a fork? Point it at your own copy with
-`| AGENT_INCOGNITO_RAW_BASE=<your raw base> bash`.
-
-Fetches the two files, drops them in `~/.claude/`, merges the hooks into `settings.json`
-(backup kept), and runs a self-test that the guard actually denies. Re-running upgrades in
-place and never duplicates hook entries.
-
-From a local copy, the same script works with no network and no env var: `./install.sh`
-
-### Option 3 — fully manual, no network
-
-The whole tool is two files. Copy them, then register the hooks:
-
-```bash
-mkdir -p ~/.claude/commands ~/.claude/hooks
-cp commands/incognito.md ~/.claude/commands/
-cp hooks/incognito.sh    ~/.claude/hooks/ && chmod +x ~/.claude/hooks/incognito.sh
-
-jq '.hooks = (.hooks // {})
-  | .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{
-      matcher: "Bash|Read|Edit|Write|Grep|Glob|NotebookEdit",
-      hooks: [{type:"command", command:"$HOME/.claude/hooks/incognito.sh guard", timeout:5}]}])
-  | .hooks.SessionEnd = ((.hooks.SessionEnd // []) + [{
-      hooks: [{type:"command", command:"$HOME/.claude/hooks/incognito.sh cleanup", timeout:5}]}])' \
-  ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json
-```
-
-Both files are short and readable — for an air-gapped machine, pasting them by hand is a
-perfectly reasonable install path.
-
 ### Verify
 
-Open a new session (or run `/hooks` once to reload config), then:
-
-```
-/incognito
-```
-
-Ask Claude to read a memory file. You should see the guard's denial, not the file.
-`/incognito off` when you're done.
+Start a new session, run `/incognito`, then ask the agent to read a memory file. You should
+see the guard's denial, not the file. `/incognito off` when you're done.
 
 ---
 
-## Distributing it to other people
+## Distributing it
 
 ### Without anyone cloning a repository
 
 | Route | What the recipient runs | Good for |
 |---|---|---|
-| **Plugin marketplace** | `/plugin marketplace add maathavan-enwithai/agent-incognito` | Most people. Managed updates, no shell, no settings edits. |
-| **curl installer** | the one-liner in Option 2 | CI images, dotfiles bootstraps, anyone without `/plugin`. |
-| **Release tarball** | `curl -fsSL https://github.com/maathavan-enwithai/agent-incognito/archive/refs/heads/main.tar.gz \| tar xz && ./agent-incognito-main/install.sh` | Pinned versions, offline-ish installs. |
-| **Two files** | copy/paste per Option 3 | Air-gapped or locked-down machines. |
-| **npm** | publish, then use an npm plugin source (below) | Teams already standardised on npm. |
+| **curl installer** | the one-liner above | Any host, any machine. Detects what's installed. |
+| **Claude Code plugin** | `/plugin marketplace add maathavan-enwithai/agent-incognito` | Claude Code users — managed updates, no shell. |
+| **Release tarball** | `curl -fsSL https://github.com/maathavan-enwithai/agent-incognito/archive/refs/heads/main.tar.gz \| tar xz && ./agent-incognito-main/install.sh` | Pinned versions. |
+| **Copy the files** | see layout below | Air-gapped or locked-down machines. |
 
-### Push it to a whole team automatically
+### Push it to a whole team
 
-Commit this to a repo's `.claude/settings.json` and every teammate who opens that repo gets the
-plugin — no instructions to follow, nothing to run:
+**Claude Code** — commit to a repo's `.claude/settings.json` and every teammate who opens it
+gets the plugin, with nothing to run:
 
 ```json
 {
@@ -168,71 +172,74 @@ plugin — no instructions to follow, nothing to run:
 }
 ```
 
-Pin a version with `"ref": "v1.0.0"` inside the source object.
+Pin a version with `"ref": "v1.0.0"`. Swap the source for an internal host, npm package, or
+a shared directory — `{"source":"directory","path":"/opt/shared/agent-incognito"}` is the
+air-gapped answer and touches no network.
 
-### Internal Git host, npm, or a shared directory
+**Cursor and Codex** both read project-level hook config, so committing `.cursor/hooks.json`
+or `.codex/hooks.json` to a repo applies the guard to everyone working in it. **Copilot**
+reads `.github/hooks/NAME.json` from the repository the same way.
 
-Swap the marketplace source; everything else is identical:
-
-```json
-{ "source": "git",       "url": "https://git.internal.example.com/tools/agent-incognito.git" }
-{ "source": "npm",       "package": "@yourorg/agent-incognito" }
-{ "source": "directory", "path": "/opt/shared/agent-incognito" }
-{ "source": "git-subdir","url": "https://github.com/your-org/monorepo", "path": "tools/agent-incognito" }
-```
-
-`directory` is the air-gapped answer: drop the folder on a shared mount or ship it with your
-machine image, and point `extraKnownMarketplaces` at the path. No network is touched.
-
-### Enterprise rollout
-
-Put the same `extraKnownMarketplaces` + `enabledPlugins` block in **managed settings**
-(`/Library/Application Support/ClaudeCode/managed-settings.json` on macOS,
-`/etc/claude-code/managed-settings.json` on Linux). It applies to every user and can't be
-disabled locally. If your org sets `strictKnownMarketplaces`, add this source to that list too,
-or the install is refused before anything downloads.
+**Enterprise** — Claude Code and Cursor both support machine-wide managed hook config
+(`/Library/Application Support/{ClaudeCode,Cursor}/` on macOS, `/etc/{claude-code,cursor}/`
+on Linux). Codex treats managed hooks as trusted by policy, which also skips the `/hooks`
+trust step for your users.
 
 ---
 
 ## Uninstall
 
-- Plugin install: `/plugin uninstall agent-incognito@agent-incognito`
-- Manual install: `./uninstall.sh` — removes both files and strips only its own hook entries
-  from `settings.json`, leaving your other hooks alone. A timestamped backup is kept.
-
----
+`./uninstall.sh` — strips only its own hook entries from each host's config, leaving your
+other hooks alone, and removes every file it installed. Timestamped backups are kept.
+Claude Code plugin installs: `/plugin uninstall agent-incognito@agent-incognito`.
 
 ## Layout
 
 ```
 agent-incognito/
-├── .claude-plugin/
-│   ├── plugin.json         # plugin manifest
-│   └── marketplace.json    # lets the repo serve as its own marketplace
-├── commands/incognito.md   # the /incognito slash command
-├── hooks/
-│   ├── hooks.json          # hook registration (plugin installs)
-│   └── incognito.sh        # control script + PreToolUse guard
-├── install.sh              # manual install, local or over HTTPS
+├── core/incognito.sh            # the whole implementation: state, matching, decision
+├── .claude-plugin/              # plugin + marketplace manifests (Claude Code)
+├── commands/incognito.md        # Claude Code slash command
+├── hooks/hooks.json             # Claude Code hook registration (plugin installs)
+├── cursor/
+│   ├── hooks.json               # merged into ~/.cursor/hooks.json
+│   └── skills/incognito/SKILL.md
+├── codex/
+│   ├── hooks.json               # merged into ~/.codex/hooks.json
+│   └── prompts/incognito.md
+├── copilot/
+│   ├── hooks/agent-incognito.json
+│   └── instructions/agent-incognito.instructions.md
+├── install.sh                   # multi-host, local or over HTTPS
 └── uninstall.sh
 ```
 
 ## Troubleshooting
 
-**`/incognito` doesn't appear.** Start a new session. For manual installs, Claude Code only
-watches directories that had a settings file when the session started.
+**The command doesn't appear.** Start a new session. Claude Code only watches directories
+that had a settings file when the session started.
 
-**The hook doesn't fire.** Run `/hooks` once to reload config, or restart. Check the entry
-survived with `jq '.hooks.PreToolUse' ~/.claude/settings.json`.
+**The hook doesn't fire.** Claude Code: `/hooks` once, or restart. Codex: `/hooks` to trust
+it — an untrusted hook is skipped silently. Cursor/Copilot: restart the app.
 
-**Everything is being denied.** Test the guard directly — it should print nothing for a normal file:
+**Everything is being denied.** Test the guard directly — it should print nothing (allow):
 
 ```bash
 echo '{"session_id":"x","tool_name":"Read","tool_input":{"file_path":"/tmp/a.ts"}}' \
-  | bash ~/.claude/hooks/incognito.sh guard
+  | bash ~/.agent-incognito/bin/incognito.sh guard --format=claude
 ```
 
-**Clear a stuck flag.** `rm -f ~/.claude/incognito/*.on`
+**Cursor blocks everything after installing.** That would mean Cursor counts a silent hook
+as an invalid permission response. Make the guard answer out loud instead:
 
-**`jq: command not found` in the hook.** The guard needs `jq` on the `PATH` that Claude Code
-launches hooks with. `brew install jq` or `apt install jq`.
+```bash
+export AGENT_INCOGNITO_EXPLICIT_ALLOW=1
+```
+
+It is off by default because an explicit `allow` also waves past Cursor's own approval
+prompts — only turn it on if you hit the problem.
+
+**Clear a stuck flag.** `rm -f ~/.agent-incognito/state/*.on`
+
+**`jq: command not found` in the hook.** The guard needs `jq` on the PATH the host launches
+hooks with. `brew install jq` / `apt install jq`.

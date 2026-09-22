@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "type": "command", "bash": "bash $HOME/.agent-incognito/bin/incognito.sh guard --format=copilot", "cwd": ".", "timeoutSec": 10 }
+    ],
+    "sessionEnd": [
+      { "type": "command", "bash": "bash $HOME/.agent-incognito/bin/incognito.sh cleanup --format=copilot", "cwd": ".", "timeoutSec": 5 }
+    ]
+  }
+}

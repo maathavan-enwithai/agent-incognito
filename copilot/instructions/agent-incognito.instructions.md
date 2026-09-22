@@ -1,12 +1,20 @@
 ---
-description: Work from a fresh state — ignore all stored memory, and save nothing unless explicitly told to
-argument-hint: "[on | off | save | status]"
-allowed-tools: Bash(sh:*)
+description: agent-incognito — how to handle requests to work without memory
 ---
 
-!`sh -c 'for p in "${CLAUDE_PLUGIN_ROOT:-}/core/incognito.sh" "$HOME/.agent-incognito/bin/incognito.sh"; do [ -f "$p" ] && exec bash "$p" "$@"; done; echo "agent-incognito: control script not found"' -- $ARGUMENTS`
+# Incognito mode
 
-The line above is the authoritative state change. Act on whichever state it reports.
+Copilot CLI has no slash command for this, so it is driven by the user asking.
+
+When the user asks to work incognito / from a fresh state / without memory — or asks you
+to leave that mode — run this in the terminal and report what it prints:
+
+```bash
+bash "$HOME/.agent-incognito/bin/incognito.sh" on      # or: off | save | status
+```
+
+Its output is the authoritative state change. If the user has not asked for any of this,
+ignore this file entirely — it costs you nothing and changes nothing.
 
 ## When it reports INCOGNITO: ON
 
