@@ -27,8 +27,8 @@ else
   command -v curl >/dev/null || die "curl is required for a network install."
   SRC="$(mktemp -d)"; trap 'rm -rf "$SRC"' EXIT
   mkdir -p "$SRC/hooks" "$SRC/commands"
-  curl -fsSL "$RAW_BASE/hooks/incognito.sh"   -o "$SRC/hooks/incognito.sh"   || die "download failed: $RAW_BASE/hooks/incognito.sh"
-  curl -fsSL "$RAW_BASE/commands/incognito.md" -o "$SRC/commands/incognito.md" || die "download failed: $RAW_BASE/commands/incognito.md"
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 "$RAW_BASE/hooks/incognito.sh"   -o "$SRC/hooks/incognito.sh"   || die "download failed: $RAW_BASE/hooks/incognito.sh"
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 "$RAW_BASE/commands/incognito.md" -o "$SRC/commands/incognito.md" || die "download failed: $RAW_BASE/commands/incognito.md"
   MODE="$RAW_BASE"
 fi
 
