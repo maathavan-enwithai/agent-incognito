@@ -81,7 +81,7 @@ claude)
   mkdir -p "$HOME_DIR/.claude/commands"
   install -m 0644 "$(fetch commands/incognito.md)" "$HOME_DIR/.claude/commands/incognito.md"
   jq --arg g "bash $BIN guard --format=claude" --arg c "bash $BIN cleanup --format=claude" '
-    def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("agent-incognito")) | not));
+    def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("incognito\\.sh")) | not));
     .hooks = (.hooks // {})
     | .hooks.PreToolUse = (drop_ours(.hooks.PreToolUse) + [{matcher:"Bash|Read|Edit|Write|Grep|Glob|NotebookEdit",hooks:[{type:"command",command:$g,timeout:5,statusMessage:"incognito guard"}]}])
     | .hooks.SessionEnd = (drop_ours(.hooks.SessionEnd) + [{hooks:[{type:"command",command:$c,timeout:5}]}])
@@ -94,7 +94,7 @@ cursor)
   install -m 0644 "$(fetch cursor/skills/incognito/SKILL.md)" "$HOME_DIR/.cursor/skills/incognito/SKILL.md"
   frag="$(sed "s|\$HOME|$HOME_DIR|g" "$(fetch cursor/hooks.json)")"
   jq --argjson frag "$frag" '
-    def drop_ours(a): (a // []) | map(select(((.command // "") | test("agent-incognito")) | not));
+    def drop_ours(a): (a // []) | map(select(((.command // "") | test("incognito\\.sh")) | not));
     .version = 1 | .hooks = (.hooks // {})
     | reduce ($frag.hooks | keys_unsorted[]) as $k (.; .hooks[$k] = (drop_ours(.hooks[$k]) + $frag.hooks[$k]))
   ' "$S" | write_json "$S"
@@ -106,7 +106,7 @@ codex)
   install -m 0644 "$(fetch codex/prompts/incognito.md)" "$HOME_DIR/.codex/prompts/incognito.md"
   frag="$(sed "s|\$HOME|$HOME_DIR|g" "$(fetch codex/hooks.json)")"
   jq --argjson frag "$frag" '
-    def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("agent-incognito")) | not));
+    def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("incognito\\.sh")) | not));
     .hooks = (.hooks // {})
     | reduce ($frag.hooks | keys_unsorted[]) as $k (.; .hooks[$k] = (drop_ours(.hooks[$k]) + $frag.hooks[$k]))
   ' "$S" | write_json "$S"

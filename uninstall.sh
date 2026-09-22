@@ -15,11 +15,11 @@ strip() {  # file  jq-drop-expression
   jq "$2" "$1" > "$tmp" && mv "$tmp" "$1"
 }
 
-NESTED='def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("agent-incognito")) | not));
+NESTED='def drop_ours(a): (a // []) | map(select((([.hooks[]?.command] | join(" ")) | test("incognito\\.sh")) | not));
         if .hooks then .hooks |= with_entries(.value = drop_ours(.value))
                        | .hooks |= with_entries(select((.value | type) != "array" or (.value | length) > 0))
         else . end'
-FLAT='def drop_ours(a): (a // []) | map(select(((.command // "") | test("agent-incognito")) | not));
+FLAT='def drop_ours(a): (a // []) | map(select(((.command // "") | test("incognito\\.sh")) | not));
       if .hooks then .hooks |= with_entries(.value = drop_ours(.value))
                      | .hooks |= with_entries(select((.value | type) != "array" or (.value | length) > 0))
       else . end'
